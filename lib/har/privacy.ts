@@ -20,6 +20,17 @@ export function maskSecret(s: string): string {
   return "…" + s.slice(-4);
 }
 
+/** Location for a finding: origin + path only, so the query string (where
+ *  tokens and emails live) is never stored back into the finding. */
+function safeLocation(url: string): string {
+  try {
+    const u = new URL(url);
+    return (u.origin + u.pathname).slice(0, 80);
+  } catch {
+    return url.split("?")[0].slice(0, 80);
+  }
+}
+
 const JWT = /eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{2,}/;
 const BEARER = /bearer\s+[A-Za-z0-9._-]{10,}/i;
 const APIKEY = /(api[_-]?key|secret|token)["'=:\s]+[A-Za-z0-9._-]{12,}/i;
@@ -32,17 +43,17 @@ export function scanPrivacy(p: ParseResult): PrivacyFinding[] {
     for (const s of hay) {
       const m = s.match(JWT) || s.match(BEARER) || s.match(APIKEY);
       if (m) {
-        out.push({ severity: "high", kind: "secret", title: "Token or secret in request", where: r.url.slice(0, 80), evidence: maskSecret(m[0]) });
+        out.push({ severity: "high", kind: "secret", title: "Token or secret in request", where: safeLocation(r.url), evidence: maskSecret(m[0]) });
         break;
       }
     }
     const em = (r.url + " " + r.queryParams.join(" ")).match(EMAIL);
-    if (em) out.push({ severity: "medium", kind: "pii", title: "Email address exposed", where: r.url.slice(0, 80), evidence: maskSecret(em[0]) });
+    if (em) out.push({ severity: "medium", kind: "pii", title: "Email address exposed", where: safeLocation(r.url), evidence: maskSecret(em[0]) });
 
     if (r.isThirdParty) {
       const cat = classifyDomain(r.registrableDomain);
       if (cat === "ads" || cat === "analytics") {
-        out.push({ severity: "low", kind: "tracker", title: `Tracker request to ${r.registrableDomain}`, where: r.url.slice(0, 80), evidence: r.registrableDomain });
+        out.push({ severity: "low", kind: "tracker", title: `Tracker request to ${r.registrableDomain}`, where: safeLocation(r.url), evidence: r.registrableDomain });
       }
     }
   }
