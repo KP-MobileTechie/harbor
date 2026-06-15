@@ -41,7 +41,7 @@ export function Findings({ items }: { items: PrivacyFinding[] }) {
         {items.map((f, i) => {
           const style = SEVERITY_STYLE[f.severity];
           return (
-            <li key={i} className="flex gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+            <li key={`${f.kind}-${f.where}-${i}`} className="flex gap-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
               <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">

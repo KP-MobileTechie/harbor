@@ -107,7 +107,7 @@ export function Copilot({ analysis }: { analysis: Analysis }) {
       </div>
 
       <p className="mb-3 text-[11px] text-zinc-500">
-        Grounded in the analysis above. Your key stays in your browser: it is sent only to {provider ?? "your chosen provider"}, never to us.
+        Grounded in the analysis above. Your key is saved in this browser's localStorage and sent only to {provider ?? "the AI provider you choose"}, never to us or anywhere else.
       </p>
 
       <div ref={scrollRef} className="max-h-96 space-y-3 overflow-y-auto">
@@ -127,7 +127,7 @@ export function Copilot({ analysis }: { analysis: Analysis }) {
           </div>
         ) : (
           messages.map((m, i) => (
-            <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
+            <div key={`${m.role}-${i}`} className={m.role === "user" ? "text-right" : "text-left"}>
               <div
                 className={`inline-block max-w-[90%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm ${
                   m.role === "user" ? "bg-blue-500/20 text-blue-100" : "bg-zinc-800/70 text-zinc-200"
