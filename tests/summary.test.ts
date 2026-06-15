@@ -43,6 +43,11 @@ describe("toMarkdown", () => {
     expect(md).toContain("Third party");
   });
 
+  it("surfaces the captured page URL from the parsed HAR", () => {
+    expect(md).toContain(parseHar(HAR).pageUrl);
+    expect(md).toContain("- Page: https://example.com/");
+  });
+
   it("includes the core sections", () => {
     expect(md).toContain("## Slowest requests");
     expect(md).toContain("## Weight");

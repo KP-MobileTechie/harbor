@@ -22,6 +22,7 @@ export function toMarkdown(name: string, parse: ParseResult, a: Analysis): strin
 
   L.push(`# Harbor report — ${name}`);
   L.push("");
+  L.push(`- Page: ${parse.pageUrl || parse.primaryDomain}`);
   L.push(`- Requests: ${s.totalRequests.toLocaleString()}`);
   L.push(`- Transferred: ${kb(s.totalTransferBytes)}`);
   L.push(`- Load time: ${ms(s.pageLoadMs)}`);
