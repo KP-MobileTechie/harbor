@@ -20,6 +20,8 @@ import { WeightBreakdown } from "@/components/WeightBreakdown";
 import { ThirdParties } from "@/components/ThirdParties";
 import { Findings } from "@/components/Findings";
 import { Copilot } from "@/components/Copilot";
+import { ScoreHeader } from "@/components/ScoreHeader";
+import { Recommendations } from "@/components/Recommendations";
 
 interface Loaded {
   name: string;
@@ -224,6 +226,13 @@ function Dashboard({ loaded, onReset }: { loaded: Loaded; onReset: () => void })
         />
         <Stat label="Render blocking" value={a.waterfall.renderBlocking.length.toLocaleString()} hint="CSS / JS before document" />
       </section>
+
+      {/* Score hero + audit recommendations */}
+      <ScoreHeader score={a.audit.score} budgets={a.audit.budgets} />
+
+      <Panel title="Recommendations" subtitle="Actionable fixes ranked by severity and estimated impact. Figures are estimates.">
+        <Recommendations recommendations={a.audit.recommendations} />
+      </Panel>
 
       <Panel title="Waterfall" subtitle="Each request over the page load, segmented by timing phase. Slowest requests are highlighted.">
         <Waterfall data={a.waterfall} />
