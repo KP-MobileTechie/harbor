@@ -33,7 +33,7 @@ const HAR = JSON.stringify({
 });
 
 describe("analysisContext", () => {
-  it("serializes the score-free facts: requests, KB, load time, third parties, privacy, slowest", () => {
+  it("serializes the facts: requests, KB, load time, third parties, privacy, slowest, and the audit", () => {
     const a = analyze(parseHar(HAR));
     const ctx = analysisContext(a);
     expect(ctx).toContain("REQUESTS: 3");
@@ -45,8 +45,16 @@ describe("analysisContext", () => {
     expect(ctx).toMatch(/PRIVACY FINDINGS/);
     expect(ctx).toMatch(/SLOWEST REQUESTS/);
     expect(ctx).toContain("google-analytics.com/collect"); // slowest is the 900ms tracker
-    // score-free: never mentions a score in Phase 1
-    expect(ctx.toLowerCase()).not.toContain("score");
+    // Phase 2: the FACTS now carry the deterministic audit score and grade.
+    expect(ctx).toContain("SCORE:");
+    expect(ctx).toContain(`${a.audit.score.value}/100`);
+    expect(ctx).toContain(`grade ${a.audit.score.grade}`);
+    expect(ctx).toContain("BUDGETS:");
+    expect(ctx).toContain("TOP RECOMMENDATIONS:");
+    // This HAR fires the uncompressed-text recommendation (a 30 KB uncompressed JS).
+    expect(ctx).toContain("[uncompressed-text]");
+    // No em dashes anywhere in the serialized facts.
+    expect(ctx).not.toContain("—");
   });
 
   it("groundedSystem embeds the anti-hallucination rules and the facts", () => {
