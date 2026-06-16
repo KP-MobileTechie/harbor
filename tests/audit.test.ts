@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { audit } from "../lib/har/audit";
+import { audit, score, budgets } from "../lib/har/audit";
 import { analyze } from "../lib/har/analyze";
 import { parseHar } from "../lib/har/parse";
 import { SAMPLES } from "../lib/har/sample";
@@ -191,5 +191,110 @@ describe("audit — sorting and determinism", () => {
   it("is deterministic: two runs over the same analysis are identical", () => {
     const a = analyze(parseHar(SAMPLES.find((s) => s.id === "slow")!.make()));
     expect(audit(a)).toEqual(audit(a));
+  });
+});
+
+describe("audit — performance score", () => {
+  const slow = () => analyze(parseHar(SAMPLES.find((s) => s.id === "slow")!.make()));
+  const lean = () => analyze(parseHar(SAMPLES.find((s) => s.id === "lean")!.make()));
+
+  it("scores the lean optimized sample high (A/B, value >= 75)", () => {
+    const sc = score(lean());
+    // All four metrics sit at or below their 'good' reference, so each
+    // sub-score clamps to 100 and the blend is a perfect 100.
+    expect(sc.value).toBe(100);
+    expect(sc.grade).toBe("A");
+  });
+
+  it("scores the bloated sample low (value <= 50)", () => {
+    // Measured from the sample: bytes ~2.21MB, 39 requests, ttfb 376ms,
+    // load 6800ms. Bytes ~35, requests ~81, ttfb ~78, load clamps to 0.
+    // 0.3*35.47 + 0.2*81.33 + 0.2*78 + 0.3*0 = ~42.5 => 43 (grade D).
+    const sc = score(slow());
+    expect(sc.value).toBe(43);
+    expect(sc.grade).toBe("D");
+    expect(sc.value).toBeLessThanOrEqual(50);
+  });
+
+  it("pins grade boundaries with crafted inputs", () => {
+    // Stub just the summary fields the scorer reads.
+    const mk = (s: Partial<import("../lib/har/analyze").Summary>) =>
+      ({ summary: { totalTransferBytes: 0, totalRequests: 0, ttfbMs: 0, pageLoadMs: 0, thirdPartyBytes: 0, ...s } } as any);
+
+    // All metrics 'good' or better => every sub-score 100 => value 100 => A.
+    expect(score(mk({})).grade).toBe("A");
+
+    // All metrics at their 'poor' reference => every sub-score 0 => value 0 => F.
+    const worst = score(mk({ totalTransferBytes: 3 * 1024 * 1024, totalRequests: 100, ttfbMs: 1000, pageLoadMs: 5000 }));
+    expect(worst.value).toBe(0);
+    expect(worst.grade).toBe("F");
+
+    // Bytes/requests/ttfb perfect (100), load at its midpoint (50).
+    // blend = 0.3*100 + 0.2*100 + 0.2*100 + 0.3*50 = 30+20+20+15 = 85 => B.
+    const b = score(mk({ pageLoadMs: 3000 }));
+    expect(b.value).toBe(85);
+    expect(b.grade).toBe("B");
+  });
+
+  it("score is deterministic on repeated calls", () => {
+    const a = slow();
+    expect(score(a)).toEqual(score(a));
+  });
+});
+
+describe("audit — budgets", () => {
+  const slow = () => analyze(parseHar(SAMPLES.find((s) => s.id === "slow")!.make()));
+  const lean = () => analyze(parseHar(SAMPLES.find((s) => s.id === "lean")!.make()));
+
+  it("the lean sample passes all default budgets", () => {
+    const checks = budgets(lean());
+    expect(checks.every((c) => c.pass)).toBe(true);
+  });
+
+  it("the bloated sample fails the byte and load budgets but passes requests", () => {
+    const checks = budgets(slow());
+    const by = (id: string) => checks.find((c) => c.id === id)!;
+    // ~2.21MB > 1.6MB limit, 6800ms > 3000ms limit.
+    expect(by("total-bytes").pass).toBe(false);
+    expect(by("load-ms").pass).toBe(false);
+    // 39 requests <= 50 limit (the sample is under the request budget).
+    expect(by("total-requests").pass).toBe(true);
+    expect(by("total-requests").actual).toBe(39);
+  });
+
+  it("returns one check per metric in a stable order", () => {
+    expect(budgets(lean()).map((c) => c.id)).toEqual([
+      "total-bytes",
+      "total-requests",
+      "third-party-bytes",
+      "load-ms",
+    ]);
+  });
+
+  it("honors a custom cfg override that changes a check's limit and pass", () => {
+    const a = slow(); // 39 requests
+    const def = budgets(a).find((c) => c.id === "total-requests")!;
+    expect(def.limit).toBe(50);
+    expect(def.pass).toBe(true);
+
+    const tight = budgets(a, { totalRequests: 20 }).find((c) => c.id === "total-requests")!;
+    expect(tight.limit).toBe(20);
+    expect(tight.pass).toBe(false);
+    expect(tight.actual).toBe(39);
+  });
+
+  it("budgets are deterministic on repeated calls", () => {
+    const a = slow();
+    expect(budgets(a)).toEqual(budgets(a));
+  });
+});
+
+describe("audit — result shape", () => {
+  it("audit() exposes recommendations, score, and budgets", () => {
+    const a = analyze(parseHar(SAMPLES.find((s) => s.id === "slow")!.make()));
+    const r = audit(a);
+    expect(Array.isArray(r.recommendations)).toBe(true);
+    expect(r.score).toEqual(score(a));
+    expect(r.budgets).toEqual(budgets(a));
   });
 });

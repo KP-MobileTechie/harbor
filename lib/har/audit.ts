@@ -20,12 +20,111 @@ export interface Recommendation {
   count: number; // how many requests/items this applies to
 }
 
+export interface Score {
+  value: number; // 0..100, rounded
+  grade: "A" | "B" | "C" | "D" | "F";
+}
+
+export interface BudgetConfig {
+  totalBytes: number;
+  totalRequests: number;
+  thirdPartyBytes: number;
+  loadMs: number;
+}
+
+export interface BudgetCheck {
+  id: string;
+  label: string;
+  actual: number;
+  limit: number;
+  pass: boolean;
+}
+
 export interface AuditResult {
   recommendations: Recommendation[];
+  score: Score;
+  budgets: BudgetCheck[];
 }
 
 const KB = 1024;
 const MB = 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// Performance score configuration. Each metric is normalized to a 0..100
+// sub-score against a reference curve: `good` maps to 100, `poor` maps to 0,
+// with linear interpolation between (and clamping outside). Because every
+// sub-score lives on the same 0..100 scale, the weighted blend mixes bytes,
+// counts, and milliseconds without comparing their raw magnitudes. Weights sum
+// to 1. All values are named here so the curves are readable, not magic.
+// ---------------------------------------------------------------------------
+interface Curve {
+  good: number; // value at/below which the sub-score is 100
+  poor: number; // value at/above which the sub-score is 0
+  weight: number;
+}
+
+const SCORE_CONFIG: { bytes: Curve; requests: Curve; ttfb: Curve; load: Curve } = {
+  bytes: { good: 512 * KB, poor: 3 * MB, weight: 0.3 },
+  requests: { good: 25, poor: 100, weight: 0.2 },
+  ttfb: { good: 200, poor: 1000, weight: 0.2 },
+  load: { good: 1000, poor: 5000, weight: 0.3 },
+};
+
+const clamp = (n: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, n));
+
+// Map a raw metric onto a 0..100 sub-score. `good` => 100, `poor` => 0, linear
+// between, clamped at both ends. Works regardless of `good < poor`.
+function subScore(value: number, c: Curve): number {
+  const t = (c.poor - value) / (c.poor - c.good);
+  return clamp(t * 100, 0, 100);
+}
+
+function gradeFor(value: number): Score["grade"] {
+  if (value >= 90) return "A";
+  if (value >= 75) return "B";
+  if (value >= 60) return "C";
+  if (value >= 40) return "D";
+  return "F";
+}
+
+export function score(analysis: Analysis): Score {
+  const s = analysis.summary;
+  const cfg = SCORE_CONFIG;
+  const blended =
+    subScore(s.totalTransferBytes, cfg.bytes) * cfg.bytes.weight +
+    subScore(s.totalRequests, cfg.requests) * cfg.requests.weight +
+    subScore(s.ttfbMs, cfg.ttfb) * cfg.ttfb.weight +
+    subScore(s.pageLoadMs, cfg.load) * cfg.load.weight;
+  const value = clamp(Math.round(blended), 0, 100);
+  return { value, grade: gradeFor(value) };
+}
+
+// Default performance budgets. Overridable per-metric via the `cfg` argument.
+const DEFAULT_BUDGETS: BudgetConfig = {
+  totalBytes: 1.6 * MB,
+  totalRequests: 50,
+  thirdPartyBytes: 500 * KB,
+  loadMs: 3000,
+};
+
+export function budgets(analysis: Analysis, cfg?: Partial<BudgetConfig>): BudgetCheck[] {
+  const limits: BudgetConfig = { ...DEFAULT_BUDGETS, ...cfg };
+  const s = analysis.summary;
+  const check = (id: string, label: string, actual: number, limit: number): BudgetCheck => ({
+    id,
+    label,
+    actual,
+    limit,
+    pass: actual <= limit,
+  });
+  // Stable order: total bytes, request count, third-party weight, load time.
+  return [
+    check("total-bytes", "Total transfer size", s.totalTransferBytes, limits.totalBytes),
+    check("total-requests", "Request count", s.totalRequests, limits.totalRequests),
+    check("third-party-bytes", "Third-party transfer size", s.thirdPartyBytes, limits.thirdPartyBytes),
+    check("load-ms", "Page load time", s.pageLoadMs, limits.loadMs),
+  ];
+}
 
 function kb(bytes: number): string {
   return `${Math.round(bytes / KB)} KB`;
@@ -144,5 +243,9 @@ export function audit(analysis: Analysis): AuditResult {
     return a.i - b.i;
   });
 
-  return { recommendations: indexed.map((x) => x.r) };
+  return {
+    recommendations: indexed.map((x) => x.r),
+    score: score(analysis),
+    budgets: budgets(analysis),
+  };
 }
