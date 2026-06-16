@@ -35,4 +35,13 @@ describe("analyze", () => {
     expect(Array.isArray(a.thirdParties)).toBe(true);
     expect(Array.isArray(a.privacy)).toBe(true);
   });
+
+  it("includes the audit: recommendations, score, and budgets", () => {
+    const a = analyze(parseHar(HAR));
+    expect(a.audit).toBeDefined();
+    expect(Array.isArray(a.audit.recommendations)).toBe(true);
+    expect(typeof a.audit.score.value).toBe("number");
+    expect(a.audit.score.grade).toMatch(/^[A-F]$/);
+    expect(Array.isArray(a.audit.budgets)).toBe(true);
+  });
 });

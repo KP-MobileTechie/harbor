@@ -9,6 +9,7 @@ import { buildWaterfall, type Waterfall } from "./waterfall";
 import { analyzeWeight, type WeightBreakdown } from "./weight";
 import { analyzeThirdParties, type ThirdParty } from "./thirdparty";
 import { scanPrivacy, type PrivacyFinding } from "./privacy";
+import { audit, type AuditResult } from "./audit";
 
 export interface Summary {
   totalRequests: number;
@@ -27,6 +28,7 @@ export interface Analysis {
   weight: WeightBreakdown;
   thirdParties: ThirdParty[];
   privacy: PrivacyFinding[];
+  audit: AuditResult;
 }
 
 export function analyze(p: ParseResult): Analysis {
@@ -35,7 +37,7 @@ export function analyze(p: ParseResult): Analysis {
   const doc = p.entries.find((r) => r.mimeCategory === "document");
   const cached = p.entries.filter((r) => r.fromCache).length;
 
-  return {
+  const partial = {
     summary: {
       totalRequests: p.total,
       totalTransferBytes: weight.totalBytes,
@@ -53,4 +55,11 @@ export function analyze(p: ParseResult): Analysis {
     thirdParties: analyzeThirdParties(p),
     privacy: scanPrivacy(p),
   };
+
+  // audit reads only summary/weight/waterfall/thirdParties, so the cast is safe
+  // before the audit field exists. The runtime import is one-directional
+  // (audit.ts imports the Analysis TYPE only, erased at compile time): no cycle.
+  const auditResult = audit(partial as Analysis);
+
+  return { ...partial, audit: auditResult };
 }

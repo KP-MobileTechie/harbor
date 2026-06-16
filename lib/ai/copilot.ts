@@ -29,7 +29,8 @@ function kb(bytes: number): string {
 }
 
 /** Serialize the analysis into a compact, factual context block for grounding.
- *  Score-free in Phase 1: no audit/score exists yet, so none is referenced. */
+ *  Phase 2: includes the deterministic audit (0-100 score, budget pass/fail,
+ *  and the top recommendations) alongside the raw capture facts. */
 export function analysisContext(a: Analysis): string {
   const L: string[] = [];
   const s = a.summary;
@@ -56,12 +57,26 @@ export function analysisContext(a: Analysis): string {
     L.push("SLOWEST REQUESTS:");
     for (const r of a.waterfall.slowest.slice(0, 8)) L.push(`- ${Math.round(r.timings.total)}ms ${r.method} ${r.host}${r.path} (${r.mimeCategory}, ${kb(r.sizes.transferBytes)})`);
   }
+  const audit = a.audit;
+  L.push(`SCORE: ${audit.score.value}/100 (grade ${audit.score.grade}), a deterministic 0-100 performance rating.`);
+  const passing = audit.budgets.filter((b) => b.pass).length;
+  const failing = audit.budgets.filter((b) => !b.pass);
+  let budgetLine = `BUDGETS: ${passing} of ${audit.budgets.length} passing.`;
+  if (failing.length) budgetLine += ` Failing: ${failing.map((b) => b.label).join(", ")}.`;
+  L.push(budgetLine);
+  if (audit.recommendations.length) {
+    L.push("TOP RECOMMENDATIONS:");
+    for (const r of audit.recommendations.slice(0, 5)) L.push(`- [${r.id}] ${r.title}: ${r.detail}`);
+  } else {
+    L.push("TOP RECOMMENDATIONS: none (no issues detected).");
+  }
   return L.join("\n");
 }
 
 const SYSTEM = `You are Harbor, an expert web-performance and privacy engineer analyzing a network capture.
 You are given FACTS extracted deterministically from the user's capture. Rules:
 - Answer ONLY from the FACTS. Do not invent requests, domains, or figures.
+- The SCORE is a deterministic 0-100 performance rating you may cite.
 - Cite specific requests, domains, and millisecond/byte figures from the FACTS.
 - If the FACTS don't answer the question, say so and point to what in the capture to look at.
 - Be concise and concrete.`;
